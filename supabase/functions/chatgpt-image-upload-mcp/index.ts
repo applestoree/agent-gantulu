@@ -6,7 +6,6 @@ import { Hono } from "npm:hono@^4.9.7";
 import { z } from "npm:zod@^4.1.13";
 
 const app = new Hono();
-const server = new McpServer({ name: "chatgpt-image-upload", version: "1.2.0" });
 const MENU_URI = "ui://upload-generated-image/menu-v3.html";
 const menuHtml = `<!doctype html>
 <html lang="id"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Upload Generated Image</title>
@@ -75,6 +74,9 @@ document.getElementById("edit").addEventListener("click",()=>choose("Saya memili
  })();
 </script></body></html>`;
 
+function createMcpServer() {
+  const server = new McpServer({ name: "chatgpt-image-upload", version: "1.2.0" });
+
 server.registerResource("upload-generated-image-menu", MENU_URI, {}, async () => ({contents:[{uri:MENU_URI,mimeType:"text/html;profile=mcp-app",text:menuHtml,_meta:{ui:{prefersBorder:true}}}]}));
 server.registerTool("show_upload_menu", {
  title:"Show image creation, prompt, and plugin editing menu",
@@ -110,5 +112,16 @@ server.registerTool("upload_generated_image", {
  if(insertError){await admin.storage.from("generated-images").remove([storagePath]);throw new Error("Image metadata could not be saved: "+insertError.message);}
  return{content:[{type:"text",text:JSON.stringify({success:true,image:row})}]};
 });
-app.all("*",async(c)=>{const transport=new WebStandardStreamableHTTPServerTransport();await server.connect(transport);return transport.handleRequest(c.req.raw);});
+  return server;
+}
+
+app.all("*", async (c) => {
+  // Stateless Streamable HTTP: each request gets an isolated server and transport.
+  const server = createMcpServer();
+  const transport = new WebStandardStreamableHTTPServerTransport({
+    sessionIdGenerator: undefined,
+  });
+  await server.connect(transport);
+  return transport.handleRequest(c.req.raw);
+});
 Deno.serve(app.fetch);
